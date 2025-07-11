@@ -6,7 +6,13 @@
     "paths": {
       "@/*": [
         "src/*"
-      ]
+      ],
+      "@/components/*": [
+        "src/shared/components/*"
+      ],
+      "@/hooks/*": [
+        "src/shared/hooks/*"
+      ],
     }
   },
   "include": [
