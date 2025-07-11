@@ -1,112 +1,143 @@
+import { Provider } from "@/components/Provider";
+import { migrateDbIfNeeded } from "@/database/migrate";
+import { useNetworkStore } from "@/stores/network";
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
-} from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
-import { TamaguiProvider } from 'tamagui';
+} from "@react-navigation/native";
+import * as Sentry from "@sentry/react-native";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useFonts } from "expo-font";
+import * as Network from "expo-network";
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { SQLiteProvider } from "expo-sqlite";
+import { StatusBar } from "expo-status-bar";
+import * as Updates from "expo-updates";
+import { useEffect } from "react";
+import { Alert, useColorScheme } from "react-native";
+import "react-native-reanimated";
 
-import { ReactQueryProvider } from "@/config/react-query/setup";
-import { migrator } from "@/database/migrator";
-import { useColorScheme } from '@/shared/hooks/common/useColorScheme';
-import { dbService } from "@/shared/services/database";
-import { networkService } from "@/shared/services/network";
-import config from '../tamagui.config';
+export {
+  // Catch any errors thrown by the Layout component.
+  ErrorBoundary
+} from "expo-router";
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
+const navigationIntegration = Sentry.reactNavigationIntegration();
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+  enabled: __DEV__,
+  debug: true, // If `true`, Sentry will try to print out useful debugging information if something goes wrong with sending the event. Set it to `false` in production
+  tracesSampleRate: 1.0, // Set tracesSampleRate to 1.0 to capture 100% of transactions for tracing. Adjusting this value in production.
+  integrations: [
+    // Pass integration
+    navigationIntegration,
+  ],
+  environment: process.env.NODE_ENV || "development",
+});
+
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+  const [interLoaded, interError] = useFonts({
+    Inter: require("@tamagui/font-inter/otf/Inter-Medium.otf"),
+    InterBold: require("@tamagui/font-inter/otf/Inter-Bold.otf"),
   });
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [initError, setInitError] = useState<string | null>(null);
+  const { setIsConnected } = useNetworkStore();
 
   useEffect(() => {
-    const initializeApp = async () => {
-      try {
-        console.log('🚀 Inicializando aplicación...');
-        
-        // 1. Abrir conexión a la base de datos
-        await dbService.init();
-        console.log('✅ Conexión a base de datos establecida');
-        
-        // 2. Ejecutar migraciones (esto crea las tablas correctas)
-        await migrator.init(dbService.getDatabase());
-        await migrator.migrate();
-        console.log('✅ Migraciones ejecutadas');
-        
-        // 3. Inicializar servicio de red
-        await networkService.init();
-        console.log('✅ Servicio de red inicializado');
-        
-        setIsInitialized(true);
-        console.log('🎉 Aplicación inicializada correctamente');
-        
-      } catch (error) {
-        console.error('❌ Error inicializando aplicación:', error);
-        setInitError(error instanceof Error ? error.message : 'Error desconocido');
-      }
-    };
-
-    if (loaded) {
-      initializeApp();
-    }
-  }, [loaded]);
-
-  useEffect(() => {
-    if (loaded && isInitialized) {
+    if (interLoaded || interError) {
+      // Hide the splash screen after the fonts have loaded (or an error was returned) and the UI is ready.
       SplashScreen.hideAsync();
     }
-  }, [loaded, isInitialized]);
+  }, [interLoaded, interError]);
 
-  // Mostrar splash mientras carga
-  if (!loaded) {
+  useEffect(() => {
+    async function checkForUpdates() {
+      if (__DEV__) {
+        console.log("Modo de desarrollo: no se buscan actualizaciones.");
+        return;
+      }
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          Alert.alert(
+            "Actualización disponible",
+            "Hay una nueva actualización disponible. ¿Deseas actualizar ahora?",
+            [
+              {
+                text: "No",
+                onPress: () => console.log("Actualización pospuesta"),
+              },
+              {
+                text: "Sí",
+                onPress: async () => {
+                  await Updates.fetchUpdateAsync();
+                  await Updates.reloadAsync();
+                },
+              },
+            ],
+          );
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    checkForUpdates();
+  }, []);
+
+  useEffect(() => {
+    const checkNetworkStatus = async () => {
+      const networkState = await Network.getNetworkStateAsync();
+      setIsConnected(networkState.isConnected || false);
+    };
+    checkNetworkStatus();
+    const intervalId = setInterval(checkNetworkStatus, 5000);
+    const unsubscribe = Network.addNetworkStateListener((state) => {
+      setIsConnected(state.isConnected || false);
+    });
+    return () => {
+      clearInterval(intervalId);
+      unsubscribe && unsubscribe.remove();
+    };
+  }, []);
+
+  if (!interLoaded && !interError) {
     return null;
   }
 
-  // Mostrar error si hay problemas
-  if (initError) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-        <Text style={{ color: 'red', fontSize: 18, fontWeight: 'bold', textAlign: 'center' }}>
-          Error al inicializar la aplicación
-        </Text>
-        <Text style={{ color: 'red', fontSize: 14, textAlign: 'center', marginTop: 10 }}>
-          {initError}
-        </Text>
-      </View>
-    );
-  }
+  return (
+    <Providers>
+      <RootLayoutNav />
+    </Providers>
+  );
+}
 
-  // Mostrar loading mientras inicializa
-  if (!isInitialized) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={{ marginTop: 16, fontSize: 16, color: '#666' }}>
-          Inicializando aplicación...
-        </Text>
-      </View>
-    );
-  }
+const Providers = ({ children }: { children: React.ReactNode }) => {
+  return <Provider>{children}</Provider>;
+};
+
+function RootLayoutNav() {
+  const colorScheme = useColorScheme();
+  const queryClient = new QueryClient();
 
   return (
-    <ReactQueryProvider>
-      <TamaguiProvider config={config}>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+      <SQLiteProvider databaseName="fdevida.db" onInit={migrateDbIfNeeded}>
+        <QueryClientProvider client={queryClient}>
+          <StatusBar style="auto" />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+            }}
+          >
+            <Stack.Screen name="(auth)/sign-in" />
             <Stack.Screen name="+not-found" />
           </Stack>
-        </ThemeProvider>
-      </TamaguiProvider>
-    </ReactQueryProvider>
+        </QueryClientProvider>
+      </SQLiteProvider>
+    </ThemeProvider>
   );
 }

@@ -53,22 +53,7 @@ export const migration_001_initial_setup: Migration = {
       );
     `);
 
-    // Tabla de todos
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS todos (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT,
-        completed INTEGER DEFAULT 0,
-        priority TEXT DEFAULT 'medium',
-        due_date INTEGER,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        synced INTEGER DEFAULT 0,
-        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-      );
-    `);
+
 
     // Tabla de configuraciones
     await db.execAsync(`
@@ -91,7 +76,6 @@ export const migration_001_initial_setup: Migration = {
     console.log('🔄 Revirtiendo migración 001: initial_setup');
     
     await db.execAsync(`DROP TABLE IF EXISTS settings;`);
-    await db.execAsync(`DROP TABLE IF EXISTS todos;`);
     await db.execAsync(`DROP TABLE IF EXISTS sessions;`);
     await db.execAsync(`DROP TABLE IF EXISTS users;`);
     await db.execAsync(`DROP TABLE IF EXISTS migrations;`);

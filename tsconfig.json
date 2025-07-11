@@ -13,6 +13,24 @@
       "@/hooks/*": [
         "src/shared/hooks/*"
       ],
+      "@/constants/*": [
+        "src/shared/constants/*"
+      ],
+      "@/services/*": [
+        "src/shared/services/*"
+      ],
+      "@/stores/*": [
+        "src/shared/stores/*"
+      ],
+      "@/types/*": [
+        "src/shared/types/*"
+      ],
+      "@/utils/*": [
+        "src/shared/utils/*"
+      ],
+      "@/validations/*": [
+        "src/shared/validations/*"
+      ]
     }
   },
   "include": [

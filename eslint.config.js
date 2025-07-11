@@ -7,4 +7,18 @@ module.exports = defineConfig([
   {
     ignores: ['dist/*'],
   },
+  {
+    settings: {
+      'import/resolver': {
+        typescript: {
+          alwaysTryTypes: true,
+          project: './tsconfig.json',
+        },
+      },
+    },
+    rules: {
+      // Reglas para imports con alias
+      'import/no-unresolved': 'error',
+    },
+  },
 ]);

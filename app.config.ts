@@ -1,4 +1,4 @@
-import { ConfigContext, ExpoConfig } from 'expo/config';
+import { ConfigContext, ExpoConfig } from "expo/config";
 
 export const IS_DEV = process.env.APP_VARIANT === "development";
 export const IS_PREVIEW = process.env.APP_VARIANT === "preview";
@@ -37,71 +37,82 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   scheme: "rnexpotraining",
   userInterfaceStyle: "automatic",
   newArchEnabled: true,
-  jsEngine: "hermes", 
+  jsEngine: "hermes",
   ios: {
     supportsTablet: true,
     bundleIdentifier: getUniqueIdentifier(),
-    jsEngine: "jsc", 
+    jsEngine: "jsc",
   },
   android: {
     adaptiveIcon: {
-        foregroundImage: "./assets/images/adaptive-icon.png",
+      foregroundImage: "./assets/images/adaptive-icon.png",
+      backgroundColor: "#ffffff",
+    },
+    edgeToEdgeEnabled: true,
+    package: getUniqueIdentifier(),
+  },
+  web: {
+    bundler: "metro",
+    output: "server",
+    favicon: "./assets/images/favicon.png",
+  },
+  plugins: [
+    "expo-router",
+    [
+      "expo-splash-screen",
+      {
+        image: "./assets/images/splash-icon.png",
+        imageWidth: 200,
+        resizeMode: "contain",
         backgroundColor: "#ffffff",
       },
-      edgeToEdgeEnabled: true,
-      package: getUniqueIdentifier(),
-    },
-    web: {
-      bundler: "metro",
-      output: "server",
-      favicon: "./assets/images/favicon.png",
-    },
-    plugins: [
-      "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          image: "./assets/images/splash-icon.png",
-          imageWidth: 200,
-          resizeMode: "contain",
-          backgroundColor: "#ffffff",
-        },
-      ],
-      [
-        "expo-maps",
-        {
-          requestLocationPermission: true,
-        },
-      ],
-      [
-        "expo-sqlite",
-        {
-          "enableFTS": true,
-          "useSQLCipher": true,
-          "android": {
-            // Override the shared configuration for Android
-            "enableFTS": false,
-            "useSQLCipher": false
-          },
-          "ios": {
-            // You can also override the shared configurations for iOS
-            "customBuildFlags": ["-DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_ENABLE_SNAPSHOT=1"]
-          }
-        }
-      ],
-      "expo-video"
     ],
-    experiments: {
-      typedRoutes: true,
-    },
-    extra: {
-      router: {
-        origin: process.env.NODE_ENV === 'development' 
-          ? "http://localhost:8081" 
-          : "https://your-production-domain.com"
+    [
+      "expo-maps",
+      {
+        requestLocationPermission: true,
       },
-      eas: {
-        projectId: "bc555c18-e09f-457f-a1ab-041755d9b54a",
+    ],
+    [
+      "expo-sqlite",
+      {
+        enableFTS: true,
+        useSQLCipher: true,
+        android: {
+          // Override the shared configuration for Android
+          enableFTS: false,
+          useSQLCipher: false,
+        },
+        ios: {
+          // You can also override the shared configurations for iOS
+          customBuildFlags: [
+            "-DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_ENABLE_SNAPSHOT=1",
+          ],
+        },
       },
+    ],
+    [
+      "@sentry/react-native/expo",
+      {
+        url: "https://sentry.io/",
+        project: "fdevida",
+        organization: "l-y-f-proyectos",
+      },
+    ],
+    "expo-video",
+  ],
+  experiments: {
+    typedRoutes: true,
+  },
+  extra: {
+    router: {
+      origin:
+        process.env.NODE_ENV === "development"
+          ? "http://localhost:8081"
+          : "https://your-production-domain.com",
     },
+    eas: {
+      projectId: "bc555c18-e09f-457f-a1ab-041755d9b54a",
+    },
+  },
 });

@@ -39,32 +39,6 @@ export const userSchema = createUserSchema.extend({
 });
 
 // ==========================================
-// SCHEMAS DE TODO
-// ==========================================
-
-export const todoPrioritySchema = z.enum(['low', 'medium', 'high'], {
-  errorMap: () => ({ message: 'Prioridad debe ser low, medium o high' }),
-});
-
-export const createTodoSchema = z.object({
-  user_id: idSchema,
-  title: z.string().min(1, 'Título es requerido').max(200, 'Título muy largo'),
-  description: z.string().max(1000, 'Descripción muy larga').optional(),
-  completed: z.boolean().default(false),
-  priority: todoPrioritySchema.default('medium'),
-  due_date: timestampSchema.optional(),
-});
-
-export const updateTodoSchema = createTodoSchema.partial().omit({ user_id: true });
-
-export const todoSchema = createTodoSchema.extend({
-  id: idSchema,
-  created_at: timestampSchema,
-  updated_at: timestampSchema,
-  synced: z.boolean().default(false),
-});
-
-// ==========================================
 // SCHEMAS DE AUTENTICACIÓN
 // ==========================================
 
@@ -110,17 +84,6 @@ export const appConfigSchema = z.object({
 // ==========================================
 // SCHEMAS DE FILTROS
 // ==========================================
-
-export const todoFiltersSchema = z.object({
-  completed: z.boolean().optional(),
-  priority: todoPrioritySchema.optional(),
-  user_id: idSchema.optional(),
-  search: z.string().max(100, 'Búsqueda muy larga').optional(),
-  due_date_from: timestampSchema.optional(),
-  due_date_to: timestampSchema.optional(),
-  limit: z.number().positive().max(100).default(50),
-  offset: z.number().min(0).default(0),
-});
 
 export const userFiltersSchema = z.object({
   role: userRoleSchema.optional(),
@@ -211,16 +174,11 @@ export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 export type User = z.infer<typeof userSchema>;
 
-export type CreateTodoInput = z.infer<typeof createTodoSchema>;
-export type UpdateTodoInput = z.infer<typeof updateTodoSchema>;
-export type Todo = z.infer<typeof todoSchema>;
-
 export type LoginCredentials = z.infer<typeof loginSchema>;
 export type RegisterCredentials = z.infer<typeof registerSchema>;
 export type Session = z.infer<typeof sessionSchema>;
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
-export type TodoFilters = z.infer<typeof todoFiltersSchema>;
 export type UserFilters = z.infer<typeof userFiltersSchema>;
 
 export type SyncAction = z.infer<typeof syncActionSchema>;

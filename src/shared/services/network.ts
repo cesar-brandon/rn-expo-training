@@ -1,151 +1,260 @@
-import * as Network from 'expo-network';
-import { NetworkState } from '../types/database';
-import { StorageService } from './storage';
+import NetInfo, { NetInfoState, NetInfoSubscription } from '@react-native-community/netinfo';
 
-type NetworkListener = (state: NetworkState) => void;
+export type NetworkConnectionType = 'wifi' | 'cellular' | 'bluetooth' | 'ethernet' | 'other' | 'unknown' | 'none';
+export type NetworkQuality = 'excellent' | 'good' | 'poor' | 'offline';
+
+export interface NetworkState {
+  isConnected: boolean;
+  isInternetReachable: boolean | null;
+  type: NetworkConnectionType;
+  quality: NetworkQuality;
+  isMetered?: boolean;
+  details?: any;
+}
+
+export interface NetworkStats {
+  uptime: number;
+  downtime: number;
+  reconnections: number;
+  lastConnectedAt: number | null;
+  lastDisconnectedAt: number | null;
+}
 
 class NetworkService {
-  private listeners: NetworkListener[] = [];
+  private isInitialized = false;
   private currentState: NetworkState = {
     isConnected: false,
     isInternetReachable: null,
-    type: null,
+    type: 'unknown',
+    quality: 'offline',
   };
-
+  
+  private stats: NetworkStats = {
+    uptime: 0,
+    downtime: 0,
+    reconnections: 0,
+    lastConnectedAt: null,
+    lastDisconnectedAt: null,
+  };
+  
+  private subscribers = new Set<(state: NetworkState) => void>();
+  private unsubscribeNetInfo: NetInfoSubscription | null = null;
+  private statsInterval: number | null = null;
+  
   async init(): Promise<void> {
-    // Obtener estado inicial
-    await this.updateNetworkState();
+    if (this.isInitialized) return;
     
-    // Monitorear cambios de conectividad
-    this.startMonitoring();
-    
-    console.log('Servicio de red inicializado');
-  }
-
-  private async updateNetworkState(): Promise<void> {
     try {
-      const networkState = await Network.getNetworkStateAsync();
+      // Obtener estado inicial
+      const initialState = await NetInfo.fetch();
+      this.updateState(initialState);
       
-      this.currentState = {
-        isConnected: networkState.isConnected || false,
-        isInternetReachable: networkState.isInternetReachable ?? null,
-        type: networkState.type || null,
-      };
-
-      // Guardar estado en storage
-      StorageService.setNetworkState(this.currentState.isConnected);
+      // Suscribirse a cambios
+      this.unsubscribeNetInfo = NetInfo.addEventListener(this.updateState.bind(this));
       
-      // Notificar a todos los listeners
-      this.notifyListeners();
+      // Iniciar seguimiento de estadísticas
+      this.startStatsTracking();
       
+      this.isInitialized = true;
     } catch (error) {
-      console.error('Error actualizando estado de red:', error);
+      console.error('Error initializing NetworkService:', error);
     }
   }
-
-  private startMonitoring(): void {
-    // Verificar conectividad cada 30 segundos
-    setInterval(() => {
-      this.updateNetworkState();
-    }, 30000);
-
-    // También verificar cuando la app se enfoca
-    // (Esto se puede mover al App.tsx si prefieres)
+  
+  private updateState(netInfoState: NetInfoState): void {
+    const wasConnected = this.currentState.isConnected;
+    
+    const newState: NetworkState = {
+      isConnected: netInfoState.isConnected ?? false,
+      isInternetReachable: netInfoState.isInternetReachable,
+      type: this.mapConnectionType(netInfoState.type),
+      quality: this.calculateQuality(netInfoState),
+      isMetered: (netInfoState as any).isConnectionExpensive ?? false,
+      details: netInfoState.details,
+    };
+    
+    // Actualizar estadísticas de conexión
+    this.updateConnectionStats(wasConnected, newState.isConnected);
+    
+    this.currentState = newState;
+    
+    // Notificar a suscriptores
+    this.notifySubscribers();
   }
-
-  private notifyListeners(): void {
-    this.listeners.forEach(listener => {
+  
+  private mapConnectionType(type: string): NetworkConnectionType {
+    switch (type) {
+      case 'wifi': return 'wifi';
+      case 'cellular': return 'cellular';
+      case 'bluetooth': return 'bluetooth';
+      case 'ethernet': return 'ethernet';
+      case 'other': return 'other';
+      case 'none': return 'none';
+      default: return 'unknown';
+    }
+  }
+  
+  private calculateQuality(state: NetInfoState): NetworkQuality {
+    if (!state.isConnected) return 'offline';
+    
+    const details = state.details as any;
+    
+    // Para WiFi, usar la fuerza de la señal si está disponible
+    if (state.type === 'wifi' && details?.strength !== undefined) {
+      if (details.strength > 70) return 'excellent';
+      if (details.strength > 40) return 'good';
+      return 'poor';
+    }
+    
+    // Para cellular, usar información de generación si está disponible
+    if (state.type === 'cellular' && details?.cellularGeneration) {
+      if (details.cellularGeneration === '5g') return 'excellent';
+      if (details.cellularGeneration === '4g') return 'good';
+      return 'poor';
+    }
+    
+    // Por defecto, asumir buena calidad si está conectado
+    return state.isInternetReachable ? 'good' : 'poor';
+  }
+  
+  private updateConnectionStats(wasConnected: boolean, isConnected: boolean): void {
+    const now = Date.now();
+    
+    if (!wasConnected && isConnected) {
+      // Se conectó
+      this.stats.reconnections++;
+      this.stats.lastConnectedAt = now;
+    } else if (wasConnected && !isConnected) {
+      // Se desconectó
+      this.stats.lastDisconnectedAt = now;
+    }
+  }
+  
+  private startStatsTracking(): void {
+    this.statsInterval = setInterval(() => {
+      if (this.currentState.isConnected) {
+        this.stats.uptime += 1000; // Incrementar en 1 segundo
+      } else {
+        this.stats.downtime += 1000;
+      }
+    }, 1000);
+  }
+  
+  private notifySubscribers(): void {
+    this.subscribers.forEach(callback => {
       try {
-        listener(this.currentState);
+        callback(this.currentState);
       } catch (error) {
-        console.error('Error notificando listener de red:', error);
+        console.error('Error notifying network subscriber:', error);
       }
     });
   }
-
-  // Suscribirse a cambios de conectividad
-  subscribe(listener: NetworkListener): () => void {
-    this.listeners.push(listener);
-    
-    // Enviar estado actual inmediatamente
-    listener(this.currentState);
-    
-    // Retornar función para desuscribirse
-    return () => {
-      const index = this.listeners.indexOf(listener);
-      if (index > -1) {
-        this.listeners.splice(index, 1);
-      }
-    };
-  }
-
-  // Obtener estado actual
-  getState(): NetworkState {
-    return { ...this.currentState };
-  }
-
-  // Verificar si está conectado
+  
+  // Métodos públicos
   isConnected(): boolean {
     return this.currentState.isConnected;
   }
-
-  // Verificar si tiene acceso a internet
+  
   hasInternetAccess(): boolean {
-    return this.currentState.isConnected && this.currentState.isInternetReachable === true;
+    return this.currentState.isInternetReachable === true;
   }
-
-  // Verificar tipo de conexión
-  getConnectionType(): string | null {
+  
+  getConnectionType(): NetworkConnectionType {
     return this.currentState.type;
   }
-
-  // Forzar actualización del estado
+  
+  getConnectionQuality(): NetworkQuality {
+    return this.currentState.quality;
+  }
+  
+  getNetworkState(): NetworkState {
+    return { ...this.currentState };
+  }
+  
+  getConnectionStats(): NetworkStats {
+    return { ...this.stats };
+  }
+  
+  isMetered(): boolean {
+    return this.currentState.isMetered === true;
+  }
+  
+  isOptimalForSync(): boolean {
+    return this.hasInternetAccess() && 
+           this.currentState.quality !== 'poor' &&
+           (this.currentState.type === 'wifi' || !this.isMetered());
+  }
+  
+  subscribe(callback: (state: NetworkState) => void): () => void {
+    this.subscribers.add(callback);
+    
+    // Enviar estado actual inmediatamente
+    callback(this.currentState);
+    
+    // Retornar función de desuscripción
+    return () => {
+      this.subscribers.delete(callback);
+    };
+  }
+  
+  getRecommendations(): string[] {
+    const recommendations: string[] = [];
+    
+    if (!this.isConnected()) {
+      recommendations.push('Sin conexión a internet');
+      return recommendations;
+    }
+    
+    if (this.currentState.quality === 'poor') {
+      recommendations.push('Conexión lenta - considera esperar a mejor señal');
+    }
+    
+    if (this.isMetered() && this.currentState.type === 'cellular') {
+      recommendations.push('Usando datos móviles - sincronización limitada');
+    }
+    
+    if (this.currentState.type === 'wifi' && this.currentState.quality === 'excellent') {
+      recommendations.push('Conexión WiFi excelente - ideal para sincronización');
+    }
+    
+    if (recommendations.length === 0) {
+      recommendations.push('Conexión estable');
+    }
+    
+    return recommendations;
+  }
+  
   async refresh(): Promise<NetworkState> {
-    await this.updateNetworkState();
-    return this.getState();
-  }
-
-  // Verificar conectividad específica a una URL
-  async checkConnectivity(url: string = 'https://www.google.com'): Promise<boolean> {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 segundos timeout
-
-      const response = await fetch(url, {
-        method: 'HEAD',
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-      return response.ok;
+      const state = await NetInfo.fetch();
+      this.updateState(state);
+      return this.currentState;
     } catch (error) {
-      console.log('Error verificando conectividad:', error);
-      return false;
+      console.error('Error refreshing network state:', error);
+      return this.currentState;
     }
   }
-
-  // Esperar a que haya conectividad
-  async waitForConnection(timeout: number = 30000): Promise<boolean> {
-    if (this.hasInternetAccess()) {
-      return true;
+  
+  destroy(): void {
+    if (this.unsubscribeNetInfo) {
+      this.unsubscribeNetInfo();
+      this.unsubscribeNetInfo = null;
     }
-
-    return new Promise((resolve) => {
-      const timeoutId = setTimeout(() => {
-        unsubscribe();
-        resolve(false);
-      }, timeout);
-
-      const unsubscribe = this.subscribe((state) => {
-        if (state.isConnected && state.isInternetReachable) {
-          clearTimeout(timeoutId);
-          unsubscribe();
-          resolve(true);
-        }
-      });
-    });
+    
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+      this.statsInterval = null;
+    }
+    
+    this.subscribers.clear();
+    this.isInitialized = false;
   }
 }
 
-// Singleton para el servicio de red
-export const networkService = new NetworkService(); 
+// Singleton instance
+export const networkService = new NetworkService();
+
+// Auto-initialize
+networkService.init().catch(console.error);
+
+export default networkService; 
